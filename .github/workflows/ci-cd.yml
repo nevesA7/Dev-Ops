@@ -2,93 +2,85 @@ name: CI/CD - Dashboard App
 
 on:
   push:
-    branches: [main]
+    branches: [ main ]
     paths:
-      - "app/**"
-      - "Dockerfile"
-  pull_request:
-    branches: [main]
-    paths:
-      - "app/**"
-      - "Dockerfile"
-
-env:
-  IMAGE_NAME: ghcr.io/${{ github.repository }}/dashboard-app
+      - 'app/**'
+      - '.github/workflows/ci-cd.yml'
+  workflow_dispatch:
 
 jobs:
   test:
-    name: Testes e lint
+    name: Executar Testes Automatizados
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
+      - name: Checkout do Código
         uses: actions/checkout@v4
 
-      - name: Setup Python
+      - name: Configurar Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          python-version: '3.11'
 
-      - name: Instalar dependências
-        working-directory: app
+      - name: Instalar Dependências
         run: |
-          pip install -r requirements.txt
-          pip install flake8
+          python -m pip install --upgrade pip
+          pip install -r app/requirements.txt
 
-      - name: Lint (flake8)
-        working-directory: app
-        run: flake8 . --max-line-length=100 --extend-ignore=E501,W503 --exit-zero
-
-      - name: Checagem de sintaxe (sanidade da app)
-        working-directory: app
-        run: python -m py_compile app.py bcb_client.py
-        # Nota: usamos py_compile (só verifica sintaxe) em vez de
-        # `import app`, porque app.py chama bcb.init_db() assim que o
-        # módulo é carregado (necessário para funcionar sob gunicorn em
-        # produção — ver README, Troubleshooting item 3). Um import de
-        # verdade aqui exigiria AIVEN_DB_URL configurada no runner do CI
-        # e uma conexão de rede até o Postgres, o que foge do escopo de
-        # um teste rápido de lint/sintaxe.
+      - name: Executar PyTest
+        run: |
+          pytest app/test_app.py
 
   build-and-push:
-    name: Build + push da imagem Docker
+    name: Build e Push da Imagem Docker
     needs: test
     runs-on: ubuntu-latest
-    if: github.event_name == 'push'
     permissions:
       contents: read
       packages: write
     steps:
-      - name: Checkout
+      - name: Checkout do Código
         uses: actions/checkout@v4
 
-      - name: Login no GitHub Container Registry
+      - name: Logar no GitHub Container Registry
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build e push
+      - name: Construir e Enviar Imagem Docker
         uses: docker/build-push-action@v5
         with:
-          context: .
-          file: ./Dockerfile
+          context: ./app
+          file: ./app/Dockerfile
           push: true
-          tags: |
-            ${{ env.IMAGE_NAME }}:latest
-            ${{ env.IMAGE_NAME }}:${{ github.sha }}
+          tags: ghcr.io/${{ github.repository_owner }}/dashboard-app:latest
 
   deploy:
-    name: Deploy (Render)
+    name: Deploy no Render e Health Check
     needs: build-and-push
     runs-on: ubuntu-latest
-    if: github.event_name == 'push'
     steps:
-      - name: Disparar deploy hook do Render
+      - name: Disparar Deploy Hook no Render
         run: |
-          curl -fsS -X POST "${{ secrets.RENDER_DEPLOY_HOOK_URL }}"
+          echo "Disparando deploy no Render..."
+          curl -X POST "${{ secrets.RENDER_DEPLOY_HOOK_URL }}"
 
-      - name: Health check pós-deploy
+      - name: Aguardar Deploy e Validar Endpoint de Saúde
         run: |
-          sleep 45
-          curl -fsS "${{ secrets.APP_HEALTHCHECK_URL }}/healthz"
+          echo "Aguardando inicialização do container (cold-start)..."
+          sleep 30
+          HEALTH_URL="${{ secrets.APP_HEALTHCHECK_URL }}/healthz"
+          
+          for i in {1..10}; do
+            echo "Tentativa $i de checagem em $HEALTH_URL"
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" "$HEALTH_URL" || true)
+            if [ "$STATUS" -eq 200 ]; then
+              echo "Aplicação saudável e conectada ao banco!"
+              exit 0
+            fi
+            sleep 15
+          done
+          
+          echo "Falha na verificação de saúde da aplicação."
+          exit 1

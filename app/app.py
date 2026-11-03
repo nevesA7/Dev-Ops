@@ -16,151 +16,121 @@ Variáveis de ambiente esperadas (ver .env.example):
 """
 
 import os
-import time
-import datetime
-from flask import Flask, render_template, jsonify
-import requests
-
-import bcb_client as bcb
+import psycopg2
+from psycopg2.extras import RealDictCursor
+from flask import Flask, render_template, jsonify, request
 
 app = Flask(__name__)
 
-CACHE_HOURS = int(os.environ.get("CACHE_HOURS", 6))
-START_TIME = time.time()
+DATABASE_URL = os.getenv("AIVEN_DB_URL", "")
 
-# Garante que as tabelas existam assim que o módulo é carregado — necessário
-# porque em produção o app roda via gunicorn (`gunicorn app:app`), que nunca
-# executa o bloco `if __name__ == "__main__":` lá embaixo.
-bcb.init_db()
+def get_db_connection():
+    if not DATABASE_URL:
+        return None
+    try:
+        conn = psycopg2.connect(DATABASE_URL, connect_timeout=5)
+        return conn
+    except Exception as e:
+        print(f"Erro ao conectar ao PostgreSQL: {e}")
+        return None
 
+def init_db():
+    conn = get_db_connection()
+    if conn:
+        try:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS visits (
+                        id SERIAL PRIMARY KEY,
+                        path VARCHAR(255) NOT NULL,
+                        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+                    );
+                """)
+                conn.commit()
+        except Exception as e:
+            print(f"Erro ao inicializar o banco de dados: {e}")
+        finally:
+            conn.close()
 
-def log_visit(path: str):
-    with bcb.get_connection() as conn:
-        with conn.cursor() as cur:
-            cur.execute("INSERT INTO visits (path) VALUES (%s);", (path,))
-        conn.commit()
+def log_visit(path):
+    conn = get_db_connection()
+    if conn:
+        try:
+            with conn.cursor() as cur:
+                cur.execute("INSERT INTO visits (path) VALUES (%s);", (path,))
+                conn.commit()
+        except Exception as e:
+            print(f"Erro ao registrar visita: {e}")
+        finally:
+            conn.close()
 
+# Inicializa o esquema de tabelas na inicialização do modulo
+init_db()
 
-def is_cache_stale(series_code: int) -> bool:
-    with bcb.get_connection() as conn:
-        with conn.cursor() as cur:
-            cur.execute(
-                "SELECT MAX(fetched_at) AS last_fetch FROM bcb_series WHERE series_code = %s;",
-                (series_code,),
-            )
-            row = cur.fetchone()
-    if not row or not row["last_fetch"]:
-        return True
-    age = datetime.datetime.now(datetime.timezone.utc) - row["last_fetch"]
-    return age > datetime.timedelta(hours=CACHE_HOURS)
+@app.route('/')
+def index():
+    log_visit(request.path)
+    return render_template('dashboard.html')
 
+@app.route('/api/stats')
+def get_stats():
+    conn = get_db_connection()
+    if not conn:
+        return jsonify({
+            "total_visits": 0,
+            "visits_per_minute": [],
+            "recent_visits": [],
+            "status": "database_offline"
+        }), 200
 
-def refresh_stale_series():
-    """Cache batch: só busca na API do BCB se ninguém (nem o consumer do
-    Kafka) já atualizou essa série recentemente."""
-    for code in bcb.SERIES:
-        if is_cache_stale(code):
-            try:
-                points = bcb.fetch_series_from_bcb(code)
-                bcb.upsert_series(code, points)
-            except (requests.RequestException, ValueError) as exc:  # noqa: BLE001
-                app.logger.warning("Falha ao atualizar série %s: %s", code, exc)
-
-
-def get_series_data(series_code: int):
-    with bcb.get_connection() as conn:
-        with conn.cursor() as cur:
-            cur.execute(
-                """
-                SELECT ref_date, value
-                FROM bcb_series
-                WHERE series_code = %s
-                ORDER BY ref_date ASC
-                LIMIT %s;
-                """,
-                (series_code, bcb.POINTS_PER_SERIES),
-            )
-            return cur.fetchall()
-
-
-def get_dashboard_data():
-    refresh_stale_series()
-
-    indicators = []
-    for code, meta in bcb.SERIES.items():
-        rows = get_series_data(code)
-        latest = rows[-1] if rows else None
-        previous = rows[-2] if len(rows) > 1 else None
-        delta = None
-        if latest and previous:
-            delta = round(float(latest["value"]) - float(previous["value"]), meta["casas"])
-
-        indicators.append(
-            {
-                "code": code,
-                "name": meta["name"],
-                "unit": meta["unit"],
-                "latest_value": round(float(latest["value"]), meta["casas"]) if latest else None,
-                "latest_date": latest["ref_date"].strftime("%d/%m/%Y") if latest else None,
-                "delta": delta,
-                "labels": [r["ref_date"].strftime("%d/%m") for r in rows],
-                "values": [round(float(r["value"]), meta["casas"]) for r in rows],
-            }
-        )
-
-    with bcb.get_connection() as conn:
-        with conn.cursor() as cur:
-            cur.execute("SELECT COUNT(*) AS total FROM visits;")
+    try:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            # 1. Total de visitas
+            cur.execute("SELECT COUNT(*) as total FROM visits;")
             total_visits = cur.fetchone()["total"]
 
-    return {
-        "indicators": indicators,
-        "total_visits": total_visits,
-        "uptime_seconds": int(time.time() - START_TIME),
-        "server_time": datetime.datetime.utcnow().isoformat() + "Z",
-        "cache_hours": CACHE_HOURS,
-    }
+            # 2. Visitas por minuto
+            cur.execute("""
+                SELECT TO_CHAR(created_at, 'HH24:MI') as minute, COUNT(*) as count
+                FROM visits
+                GROUP BY minute
+                ORDER BY minute ASC
+                LIMIT 15;
+            """)
+            visits_per_minute = cur.fetchall()
 
+            # 3. Últimos acessos
+            cur.execute("""
+                SELECT id, path, TO_CHAR(created_at, 'DD/MM/YYYY HH24:MI:SS') as created_at
+                FROM visits
+                ORDER BY id DESC
+                LIMIT 10;
+            """)
+            recent_visits = cur.fetchall()
 
-@app.route("/")
-def dashboard():
-    log_visit("/")
-    data = get_dashboard_data()
-    return render_template("dashboard.html", data=data)
+        return jsonify({
+            "total_visits": total_visits,
+            "visits_per_minute": visits_per_minute,
+            "recent_visits": recent_visits,
+            "status": "ok"
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    finally:
+        conn.close()
 
-
-@app.route("/api/indicators")
-def api_indicators():
-    log_visit("/api/indicators")
-    return jsonify(get_dashboard_data())
-
-
-@app.route("/api/refresh", methods=["POST"])
-def api_refresh():
-    """Força a atualização de todas as séries via cache batch, ignorando a
-    idade do cache. Útil como fallback quando não se está usando Kafka."""
-    for code in bcb.SERIES:
-        try:
-            points = bcb.fetch_series_from_bcb(code)
-            bcb.upsert_series(code, points)
-        except (requests.RequestException, ValueError) as exc:  # noqa: BLE001
-            return jsonify({"status": "error", "series": code, "detail": str(exc)}), 502
-    return jsonify({"status": "ok", "refreshed": list(bcb.SERIES.keys())})
-
-
-@app.route("/healthz")
+@app.route('/healthz')
 def healthz():
-    """Usado pelo pipeline de CI/CD e pela plataforma de deploy (health check)."""
-    try:
-        with bcb.get_connection() as conn:
+    conn = get_db_connection()
+    if conn:
+        try:
             with conn.cursor() as cur:
                 cur.execute("SELECT 1;")
-        return jsonify({"status": "ok"}), 200
-    except Exception as exc:  # noqa: BLE001
-        return jsonify({"status": "error", "detail": str(exc)}), 503
+            conn.close()
+            return jsonify({"status": "ok", "database": "connected"}), 200
+        except Exception:
+            return jsonify({"status": "error", "database": "disconnected"}), 503
+    return jsonify({"status": "error", "database": "disconnected"}), 503
 
-
-if __name__ == "__main__":
-    refresh_stale_series()
-    port = int(os.environ.get("PORT", 8080))
-    app.run(host="0.0.0.0", port=port)
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=5000, debug=True)
