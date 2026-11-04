@@ -3,50 +3,61 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Dashboard de Telemetria — Pipeline DevOps</title>
+    <title>Dashboard de Indicadores Económicos — Banco Central</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body>
     <div class="container">
         <header>
-            <h1>Dashboard de Telemetria e Acessos</h1>
-            <p class="subtitle">Infraestrutura gerenciada na Aiven.io | Hospedado no Render</p>
+            <h1>Indicadores Económicos — Banco Central do Brasil</h1>
+            <p class="subtitle">Aiven PostgreSQL | Render PaaS | Pipeline CI/CD</p>
         </header>
 
         <section class="cards-grid">
             <div class="card">
-                <h3>Visitas Totais</h3>
-                <div class="card-value" id="total-visits">0</div>
-                <span class="card-status">Atualizado em tempo real</span>
+                <h3>Dólar (USD/BRL)</h3>
+                <div class="card-value" id="val-dolar">R$ --</div>
+                <span class="card-status" id="data-dolar">A carregar...</span>
+            </div>
+            <div class="card">
+                <h3>Taxa Selic</h3>
+                <div class="card-value" id="val-selic">-- %</div>
+                <span class="card-status" id="data-selic">A carregar...</span>
+            </div>
+            <div class="card">
+                <h3>IPCA (Inflação)</h3>
+                <div class="card-value" id="val-ipca">-- %</div>
+                <span class="card-status" id="data-ipca">A carregar...</span>
             </div>
             <div class="card">
                 <h3>Status do Banco</h3>
-                <div class="card-value status-online" id="db-status">Conectando...</div>
+                <div class="card-value status-online" id="db-status">A verificar...</div>
                 <span class="card-status">PostgreSQL Aiven.io</span>
             </div>
         </section>
 
         <section class="chart-section">
-            <h2>Acessos por Minuto</h2>
+            <h2>Histórico da Cotação do Dólar</h2>
             <div class="chart-container">
-                <canvas id="visitsChart"></canvas>
+                <canvas id="bcbChart"></canvas>
             </div>
         </section>
 
         <section class="table-section">
-            <h2>Últimos Acessos Registrados</h2>
+            <h2>Últimas Cotações Registadas (BCB)</h2>
             <table>
                 <thead>
                     <tr>
-                        <th>ID</th>
-                        <th>Rota / Caminho</th>
-                        <th>Data e Horário</th>
+                        <th>Data</th>
+                        <th>Dólar (R$)</th>
+                        <th>Selic (%)</th>
+                        <th>IPCA (%)</th>
                     </tr>
                 </thead>
-                <tbody id="recent-visits-body">
+                <tbody id="bcb-table-body">
                     <tr>
-                        <td colspan="3" class="loading">Carregando acessos...</td>
+                        <td colspan="4" class="loading">A carregar dados do Banco Central...</td>
                     </tr>
                 </tbody>
             </table>
@@ -54,19 +65,19 @@
     </div>
 
     <script>
-        let visitsChart = null;
+        let bcbChart = null;
 
         function initChart() {
-            const ctx = document.getElementById('visitsChart').getContext('2d');
-            visitsChart = new Chart(ctx, {
+            const ctx = document.getElementById('bcbChart').getContext('2d');
+            bcbChart = new Chart(ctx, {
                 type: 'line',
                 data: {
                     labels: [],
                     datasets: [{
-                        label: 'Acessos por Minuto',
+                        label: 'Dólar (R$)',
                         data: [],
-                        borderColor: '#3b82f6',
-                        backgroundColor: 'rgba(59, 130, 246, 0.15)',
+                        borderColor: '#38bdf8',
+                        backgroundColor: 'rgba(56, 189, 248, 0.15)',
                         fill: true,
                         tension: 0.3
                     }]
@@ -75,55 +86,88 @@
                     responsive: true,
                     maintainAspectRatio: false,
                     scales: {
-                        y: { beginAtZero: true, ticks: { precision: 0 } }
+                        y: { beginAtZero: false }
                     }
                 }
             });
         }
 
-        async function fetchStats() {
+        async function fetchBCBData() {
             try {
                 const response = await fetch('/api/stats');
-                const data = await response.json();
+                const result = await response.json();
 
-                document.getElementById('total-visits').innerText = data.total_visits || 0;
-                
-                const dbStatus = document.getElementById('db-status');
-                if (data.status === 'ok') {
-                    dbStatus.innerText = "Online";
-                    dbStatus.className = "card-value status-online";
-                } else {
-                    dbStatus.innerText = "Offline";
-                    dbStatus.className = "card-value status-offline";
-                }
+                if (result.status === 'ok') {
+                    const series = result.series;
 
-                if (visitsChart && data.visits_per_minute) {
-                    visitsChart.data.labels = data.visits_per_minute.map(item => item.minute);
-                    visitsChart.data.datasets[0].data = data.visits_per_minute.map(item => item.count);
-                    visitsChart.update();
-                }
+                    // Atualiza Status do Banco
+                    const dbStatus = document.getElementById('db-status');
+                    if (result.database === 'connected') {
+                        dbStatus.innerText = "Online";
+                        dbStatus.className = "card-value status-online";
+                    } else {
+                        dbStatus.innerText = "Offline";
+                        dbStatus.className = "card-value status-offline";
+                    }
 
-                const tbody = document.getElementById('recent-visits-body');
-                if (data.recent_visits && data.recent_visits.length > 0) {
-                    tbody.innerHTML = data.recent_visits.map(visit => `
-                        <tr>
-                            <td>#${visit.id}</td>
-                            <td><code>${visit.path}</code></td>
-                            <td>${visit.created_at}</td>
-                        </tr>
-                    `).join('');
-                } else {
-                    tbody.innerHTML = '<tr><td colspan="3">Nenhum acesso registrado ainda.</td></tr>';
+                    // Preenche Cards
+                    if (series.dolar && series.dolar.length > 0) {
+                        const ultDolar = series.dolar[series.dolar.length - 1];
+                        document.getElementById('val-dolar').innerText = `R$ ${parseFloat(ultDolar.valor).toFixed(2)}`;
+                        document.getElementById('data-dolar').innerText = `Data: ${ultDolar.data}`;
+                    }
+
+                    if (series.selic && series.selic.length > 0) {
+                        const ultSelic = series.selic[series.selic.length - 1];
+                        document.getElementById('val-selic').innerText = `${ultSelic.valor}%`;
+                        document.getElementById('data-selic').innerText = `Data: ${ultSelic.data}`;
+                    }
+
+                    if (series.ipca && series.ipca.length > 0) {
+                        const ultIpca = series.ipca[series.ipca.length - 1];
+                        document.getElementById('val-ipca').innerText = `${ultIpca.valor}%`;
+                        document.getElementById('data-ipca').innerText = `Data: ${ultIpca.data}`;
+                    }
+
+                    // Atualiza Gráfico do Dólar
+                    if (bcbChart && series.dolar) {
+                        bcbChart.data.labels = series.dolar.map(item => item.data);
+                        bcbChart.data.datasets[0].data = series.dolar.map(item => parseFloat(item.valor));
+                        bcbChart.update();
+                    }
+
+                    // Preenche Tabela
+                    const tbody = document.getElementById('bcb-table-body');
+                    const rowsCount = Math.min(
+                        series.dolar ? series.dolar.length : 0,
+                        series.selic ? series.selic.length : 0,
+                        series.ipca ? series.ipca.length : 0
+                    );
+
+                    if (rowsCount > 0) {
+                        let html = '';
+                        for (let i = rowsCount - 1; i >= 0; i--) {
+                            html += `
+                                <tr>
+                                    <td>${series.dolar[i].data}</td>
+                                    <td>R$ ${series.dolar[i].valor}</td>
+                                    <td>${series.selic[i] ? series.selic[i].valor + '%' : '-'}</td>
+                                    <td>${series.ipca[i] ? series.ipca[i].valor + '%' : '-'}</td>
+                                </tr>
+                            `;
+                        }
+                        tbody.innerHTML = html;
+                    }
                 }
             } catch (error) {
-                console.error("Erro ao carregar estatísticas:", error);
+                console.error("Erro ao procurar dados do BCB:", error);
             }
         }
 
         document.addEventListener('DOMContentLoaded', () => {
             initChart();
-            fetchStats();
-            setInterval(fetchStats, 10000);
+            fetchBCBData();
+            setInterval(fetchBCBData, 15000);
         });
     </script>
 </body>
