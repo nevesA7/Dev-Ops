@@ -171,13 +171,22 @@
 
             // 3. Bitcoin
             if (series.bitcoin) {
-              const btcVal = series.bitcoin.valor.toLocaleString("pt-BR", {
-                style: "currency",
-                currency: "BRL",
-              });
-              document.getElementById("val-btc").innerText = btcVal;
+              const rawVal = series.bitcoin.valor;
+              const numVal =
+                typeof rawVal === "number" ? rawVal : parseFloat(rawVal) || 0;
+              if (numVal > 0) {
+                document.getElementById("val-btc").innerText =
+                  numVal.toLocaleString("pt-BR", {
+                    style: "currency",
+                    currency: "BRL",
+                    maximumFractionDigits: 2,
+                  });
+              } else {
+                document.getElementById("val-btc").innerText = "R$ --";
+              }
+              const variacao = series.bitcoin.variacao || "0";
               document.getElementById("var-btc").innerText =
-                `Var. 24h: ${series.bitcoin.variacao}%`;
+                `Var. 24h: ${variacao}%`;
             }
 
             // 4. Clima
