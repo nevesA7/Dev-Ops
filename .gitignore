@@ -1,0 +1,21 @@
+# Python & Ambientes Virtuais
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+venv/
+*.pyo
+*.pyd
+
+# Variáveis de Ambiente e Segredos
+.env
+.env.*
+
+# Configurações do VS Code / IDEs
+.vscode/
+.idea/
+
+# Terraform (se houver)
+.terraform/
+*.tfstate
+*.tfstate.backup
