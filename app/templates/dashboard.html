@@ -1,186 +1,238 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="pt-BR">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Portal de Dados Abertos — Indicadores e Telemetria</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Portal de Dados Abertos — Indicadores em Tempo Real</title>
+    <link
+      rel="stylesheet"
+      href="{{ url_for('static', filename='style.css') }}"
+    />
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-</head>
-<body>
+  </head>
+  <body>
     <div class="container">
-        <header>
-            <h1>Portal Multi-API de Dados Abertos</h1>
-            <p class="subtitle">BCB | AwesomeAPI | Open-Meteo | PostgreSQL Aiven.io | Render PaaS</p>
-        </header>
+      <header>
+        <h1>Portal de Dados Abertos e Telemetria</h1>
+        <p class="subtitle">
+          <span>BCB</span> • <span>AwesomeAPI</span> • <span>Open-Meteo</span> •
+          <span>PostgreSQL Aiven</span> • <span>Render PaaS</span>
+        </p>
+      </header>
 
-        <section class="cards-grid">
-            <div class="card">
-                <h3>Dólar (USD/BRL)</h3>
-                <div class="card-value" id="val-dolar">R$ --</div>
-                <span class="card-status" id="data-dolar">Banco Central</span>
-            </div>
-            <div class="card">
-                <h3>Euro (EUR/BRL)</h3>
-                <div class="card-value" id="val-euro">R$ --</div>
-                <span class="card-status" id="data-euro">Banco Central</span>
-            </div>
-            <div class="card">
-                <h3>Bitcoin (BTC)</h3>
-                <div class="card-value" id="val-btc">R$ --</div>
-                <span class="card-status" id="var-btc">AwesomeAPI</span>
-            </div>
-            <div class="card">
-                <h3>Clima (Salvador)</h3>
-                <div class="card-value" id="val-clima">-- °C</div>
-                <span class="card-status" id="data-clima">Open-Meteo</span>
-            </div>
-            <div class="card">
-                <h3>Status do Banco</h3>
-                <div class="card-value status-online" id="db-status">A verificar...</div>
-                <span class="card-status">PostgreSQL Aiven.io</span>
-            </div>
-        </section>
+      <section class="cards-grid">
+        <div class="card">
+          <h3>Dólar (USD/BRL)</h3>
+          <div class="card-value" id="val-dolar">R$ --</div>
+          <span class="card-status" id="data-dolar">Banco Central</span>
+        </div>
+        <div class="card">
+          <h3>Euro (EUR/BRL)</h3>
+          <div class="card-value" id="val-euro">R$ --</div>
+          <span class="card-status" id="data-euro">Banco Central</span>
+        </div>
+        <div class="card">
+          <h3>Bitcoin (BTC)</h3>
+          <div class="card-value" id="val-btc">R$ --</div>
+          <span class="card-status" id="var-btc">AwesomeAPI</span>
+        </div>
+        <div class="card">
+          <h3>Clima (Salvador)</h3>
+          <div class="card-value" id="val-clima">-- °C</div>
+          <span class="card-status" id="data-clima">Open-Meteo</span>
+        </div>
+        <div class="card">
+          <h3>Status do Banco</h3>
+          <div class="card-value status-online" id="db-status">
+            Verificando...
+          </div>
+          <span class="card-status">PostgreSQL Aiven.io</span>
+        </div>
+      </section>
 
-        <section class="chart-section">
-            <h2>Evolução Cambial: Dólar vs Euro (BCB)</h2>
-            <div class="chart-container">
-                <canvas id="bcbChart"></canvas>
-            </div>
-        </section>
+      <section class="chart-section">
+        <h2>Evolução Cambial: Dólar vs Euro (BCB)</h2>
+        <div class="chart-container">
+          <canvas id="bcbChart"></canvas>
+        </div>
+      </section>
 
-        <section class="table-section">
-            <h2>Histórico das Séries do Banco Central</h2>
-            <table>
-                <thead>
-                    <tr>
-                        <th>Data</th>
-                        <th>Dólar (R$)</th>
-                        <th>Euro (R$)</th>
-                        <th>Selic (%)</th>
-                        <th>IPCA (%)</th>
-                    </tr>
-                </thead>
-                <tbody id="bcb-table-body">
-                    <tr>
-                        <td colspan="5" class="loading">A carregar dados integrados...</td>
-                    </tr>
-                </tbody>
-            </table>
-        </section>
+      <section class="table-section">
+        <h2>Histórico das Séries Temporais</h2>
+        <table>
+          <thead>
+            <tr>
+              <th>Data</th>
+              <th>Dólar (R$)</th>
+              <th>Euro (R$)</th>
+              <th>Selic (%)</th>
+              <th>IPCA (%)</th>
+            </tr>
+          </thead>
+          <tbody id="bcb-table-body">
+            <tr>
+              <td colspan="5" class="loading">
+                Carregando dados das fontes abertas...
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
     </div>
 
     <script>
-        let bcbChart = null;
+      let bcbChart = null;
 
-        function initChart() {
-            const ctx = document.getElementById('bcbChart').getContext('2d');
-            bcbChart = new Chart(ctx, {
-                type: 'line',
-                data: {
-                    labels: [],
-                    datasets: [
-                        {
-                            label: 'Dólar (R$)',
-                            data: [],
-                            borderColor: '#38bdf8',
-                            backgroundColor: 'rgba(56, 189, 248, 0.15)',
-                            tension: 0.3
-                        },
-                        {
-                            label: 'Euro (R$)',
-                            data: [],
-                            borderColor: '#a855f7',
-                            backgroundColor: 'rgba(168, 85, 247, 0.15)',
-                            tension: 0.3
-                        }
-                    ]
+      function initChart() {
+        const ctx = document.getElementById("bcbChart").getContext("2d");
+        bcbChart = new Chart(ctx, {
+          type: "line",
+          data: {
+            labels: [],
+            datasets: [
+              {
+                label: "Dólar (R$)",
+                data: [],
+                borderColor: "#38bdf8",
+                backgroundColor: "rgba(56, 189, 248, 0.12)",
+                fill: true,
+                tension: 0.35,
+                borderWidth: 2,
+                pointRadius: 3,
+                pointHoverRadius: 6,
+              },
+              {
+                label: "Euro (R$)",
+                data: [],
+                borderColor: "#c084fc",
+                backgroundColor: "rgba(192, 132, 252, 0.12)",
+                fill: true,
+                tension: 0.35,
+                borderWidth: 2,
+                pointRadius: 3,
+                pointHoverRadius: 6,
+              },
+            ],
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+              legend: {
+                labels: {
+                  color: "#9ca3af",
+                  font: { family: "Inter", size: 12 },
                 },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    scales: { y: { beginAtZero: false } }
-                }
-            });
-        }
+              },
+            },
+            scales: {
+              x: {
+                grid: { color: "rgba(255, 255, 255, 0.04)" },
+                ticks: { color: "#9ca3af", font: { family: "Inter" } },
+              },
+              y: {
+                grid: { color: "rgba(255, 255, 255, 0.04)" },
+                ticks: { color: "#9ca3af", font: { family: "Inter" } },
+                beginAtZero: false,
+              },
+            },
+          },
+        });
+      }
 
-        async function fetchBCBData() {
-            try {
-                const response = await fetch('/api/stats');
-                const result = await response.json();
+      async function fetchBCBData() {
+        try {
+          const response = await fetch("/api/stats");
+          const result = await response.json();
 
-                if (result.status === 'ok') {
-                    const series = result.series;
+          if (result.status === "ok") {
+            const series = result.series;
 
-                    // 1. Status do Banco
-                    const dbStatus = document.getElementById('db-status');
-                    dbStatus.innerText = result.database === 'connected' ? "Online" : "Offline";
-                    dbStatus.className = result.database === 'connected' ? "card-value status-online" : "card-value status-offline";
+            // 1. Status do Banco
+            const dbStatus = document.getElementById("db-status");
+            dbStatus.innerText =
+              result.database === "connected" ? "Online" : "Offline";
+            dbStatus.className =
+              result.database === "connected"
+                ? "card-value status-online"
+                : "card-value status-offline";
 
-                    // 2. Dólar & Euro
-                    if (series.dolar && series.dolar.length > 0) {
-                        const ultDolar = series.dolar[series.dolar.length - 1];
-                        document.getElementById('val-dolar').innerText = `R$ ${parseFloat(ultDolar.valor).toFixed(2)}`;
-                    }
-                    if (series.euro && series.euro.length > 0) {
-                        const ultEuro = series.euro[series.euro.length - 1];
-                        document.getElementById('val-euro').innerText = `R$ ${parseFloat(ultEuro.valor).toFixed(2)}`;
-                    }
+            // 2. Dólar & Euro
+            if (series.dolar && series.dolar.length > 0) {
+              const ultDolar = series.dolar[series.dolar.length - 1];
+              document.getElementById("val-dolar").innerText =
+                `R$ ${parseFloat(ultDolar.valor).toFixed(2)}`;
+            }
+            if (series.euro && series.euro.length > 0) {
+              const ultEuro = series.euro[series.euro.length - 1];
+              document.getElementById("val-euro").innerText =
+                `R$ ${parseFloat(ultEuro.valor).toFixed(2)}`;
+            }
 
-                    // 3. Bitcoin
-                    if (series.bitcoin) {
-                        const btcVal = series.bitcoin.valor.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-                        document.getElementById('val-btc').innerText = btcVal;
-                        document.getElementById('var-btc').innerText = `Var. 24h: ${series.bitcoin.variacao}%`;
-                    }
+            // 3. Bitcoin
+            if (series.bitcoin) {
+              const btcVal = series.bitcoin.valor.toLocaleString("pt-BR", {
+                style: "currency",
+                currency: "BRL",
+              });
+              document.getElementById("val-btc").innerText = btcVal;
+              document.getElementById("var-btc").innerText =
+                `Var. 24h: ${series.bitcoin.variacao}%`;
+            }
 
-                    // 4. Clima
-                    if (series.clima) {
-                        document.getElementById('val-clima').innerText = `${series.clima.temp} °C`;
-                        document.getElementById('data-clima').innerText = `Umidade: ${series.clima.umidade}%`;
-                    }
+            // 4. Clima
+            if (series.clima) {
+              document.getElementById("val-clima").innerText =
+                `${series.clima.temp} °C`;
+              document.getElementById("data-clima").innerText =
+                `Umidade: ${series.clima.umidade}%`;
+            }
 
-                    // 5. Gráfico
-                    if (bcbChart && series.dolar && series.euro) {
-                        bcbChart.data.labels = series.dolar.map(item => item.data);
-                        bcbChart.data.datasets[0].data = series.dolar.map(item => parseFloat(item.valor));
-                        bcbChart.data.datasets[1].data = series.euro.map(item => parseFloat(item.valor));
-                        bcbChart.update();
-                    }
+            // 5. Gráfico
+            if (bcbChart && series.dolar && series.euro) {
+              bcbChart.data.labels = series.dolar.map((item) => item.data);
+              bcbChart.data.datasets[0].data = series.dolar.map((item) =>
+                parseFloat(item.valor),
+              );
+              bcbChart.data.datasets[1].data = series.euro.map((item) =>
+                parseFloat(item.valor),
+              );
+              bcbChart.update();
+            }
 
-                    // 6. Tabela
-                    const tbody = document.getElementById('bcb-table-body');
-                    const rowsCount = Math.min(
-                        series.dolar ? series.dolar.length : 0,
-                        series.euro ? series.euro.length : 0
-                    );
+            // 6. Tabela
+            const tbody = document.getElementById("bcb-table-body");
+            const rowsCount = Math.min(
+              series.dolar ? series.dolar.length : 0,
+              series.euro ? series.euro.length : 0,
+            );
 
-                    if (rowsCount > 0) {
-                        let html = '';
-                        for (let i = rowsCount - 1; i >= 0; i--) {
-                            html += `
+            if (rowsCount > 0) {
+              let html = "";
+              for (let i = rowsCount - 1; i >= 0; i--) {
+                html += `
                                 <tr>
                                     <td>${series.dolar[i].data}</td>
                                     <td>R$ ${series.dolar[i].valor}</td>
-                                    <td>R$ ${series.euro[i] ? series.euro[i].valor : '-'}</td>
-                                    <td>${series.selic[i] ? series.selic[i].valor + '%' : '-'}</td>
-                                    <td>${series.ipca[i] ? series.ipca[i].valor + '%' : '-'}</td>
+                                    <td>R$ ${series.euro[i] ? series.euro[i].valor : "-"}</td>
+                                    <td>${series.selic[i] ? series.selic[i].valor + "%" : "-"}</td>
+                                    <td>${series.ipca[i] ? series.ipca[i].valor + "%" : "-"}</td>
                                 </tr>
                             `;
-                        }
-                        tbody.innerHTML = html;
-                    }
-                }
-            } catch (error) {
-                console.error("Erro ao carregar dados:", error);
+              }
+              tbody.innerHTML = html;
             }
+          }
+        } catch (error) {
+          console.error("Erro ao carregar dados:", error);
         }
+      }
 
-        document.addEventListener('DOMContentLoaded', () => {
-            initChart();
-            fetchBCBData();
-            setInterval(fetchBCBData, 15000);
-        });
+      document.addEventListener("DOMContentLoaded", () => {
+        initChart();
+        fetchBCBData();
+        setInterval(fetchBCBData, 15000);
+      });
     </script>
-</body>
+  </body>
 </html>
