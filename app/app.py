@@ -1,18 +1,6 @@
 """
-Dashboard de Indicadores Econômicos — App Flask
-Lê os indicadores do Postgres da Aiven (tabela bcb_series). Os dados chegam
-lá de duas formas possíveis, que podem conviver:
-
-  1. Cache batch: este próprio app busca dados novos na API do BCB quando
-     o cache está velho (ver refresh_stale_series abaixo) — funciona sozinho,
-     sem depender de Kafka.
-  2. Streaming: producer.py publica no Kafka, consumer.py assina o tópico
-     e grava aqui — ver README para a arquitetura completa.
-
-Variáveis de ambiente esperadas (ver .env.example):
-  AIVEN_DB_URL   -> string de conexão fornecida pela Aiven
-  PORT           -> porta HTTP (default 8080)
-  CACHE_HOURS    -> horas antes de buscar dados novos na API (default 6)
+Dashboard de Telemetria e Acessos — App Flask
+Registra e exibe o histórico de visitas no PostgreSQL da Aiven.io.
 """
 
 import os
