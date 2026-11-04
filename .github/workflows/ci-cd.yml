@@ -3,9 +3,6 @@ name: CI/CD - Dashboard App
 on:
   push:
     branches: [ main ]
-    paths:
-      - 'app/**'
-      - '.github/workflows/ci-cd.yml'
   workflow_dispatch:
 
 jobs:
@@ -41,6 +38,11 @@ jobs:
       - name: Checkout do Código
         uses: actions/checkout@v4
 
+      - name: Normalizar nome do usuario para minusculas
+        id: lower
+        run: |
+          echo "owner=$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')" >> $GITHUB_OUTPUT
+
       - name: Logar no GitHub Container Registry
         uses: docker/login-action@v3
         with:
@@ -54,7 +56,7 @@ jobs:
           context: ./app
           file: ./app/Dockerfile
           push: true
-          tags: ghcr.io/${{ github.repository_owner }}/dashboard-app:latest
+          tags: ghcr.io/${{ steps.lower.outputs.owner }}/dashboard-app:latest
 
   deploy:
     name: Deploy no Render e Health Check
@@ -63,16 +65,15 @@ jobs:
     steps:
       - name: Disparar Deploy Hook no Render
         run: |
-          echo "Disparando deploy no Render..."
           curl -X POST "${{ secrets.RENDER_DEPLOY_HOOK_URL }}"
 
-      - name: Aguardar Deploy e Validar Endpoint de Saúde
+      - name: Aguardar e Validar Saúde da Aplicação
         run: |
-          echo "Aguardando inicialização do container (cold-start)..."
-          sleep 30
+          echo "Aguardando inicialização do container no Render..."
+          sleep 45
           HEALTH_URL="${{ secrets.APP_HEALTHCHECK_URL }}/healthz"
           
-          for i in {1..10}; do
+          for i in {1..12}; do
             echo "Tentativa $i de checagem em $HEALTH_URL"
             STATUS=$(curl -s -o /dev/null -w "%{http_code}" "$HEALTH_URL" || true)
             if [ "$STATUS" -eq 200 ]; then
