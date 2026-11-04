@@ -10,14 +10,16 @@ def client():
 def test_index_page(client):
     response = client.get('/')
     assert response.status_code == 200
-    assert b"Banco Central" in response.data
 
-def test_api_bcb_stats(client):
+def test_api_stats_multi_sources(client):
     response = client.get('/api/stats')
     assert response.status_code == 200
     data = response.get_json()
     assert "series" in data
     assert "dolar" in data["series"]
+    assert "euro" in data["series"]
+    assert "bitcoin" in data["series"]
+    assert "clima" in data["series"]
 
 def test_healthz_endpoint(client):
     response = client.get('/healthz')
