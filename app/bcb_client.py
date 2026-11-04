@@ -21,31 +21,30 @@ def fetch_bcb_series(code, last_n=10):
 def fetch_bitcoin():
     headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
     
-    # 1. Binance API (Principal: Resposta instantânea e sem bloqueio)
+    # 1. Coinbase API (Sem bloqueios em servidores Cloud/Render)
     try:
-        url_binance = "https://api.binance.com/api/v3/ticker/24hr?symbol=BTCBRL"
-        resp = requests.get(url_binance, headers=headers, timeout=4)
+        url = "https://api.coinbase.com/v2/prices/BTC-BRL/spot"
+        resp = requests.get(url, headers=headers, timeout=5)
         if resp.status_code == 200:
-            data = resp.json()
-            val = float(data.get("lastPrice", 0))
-            var = float(data.get("priceChangePercent", 0))
-            if val > 0:
-                return {"valor": val, "variacao": f"{var:.2f}"}
+            amount = float(resp.json().get("data", {}).get("amount", 0))
+            if amount > 0:
+                return {"valor": amount, "variacao": "0.00"}
     except Exception as e:
-        print(f"Binance BTC error: {e}")
+        print(f"Coinbase BTC error: {e}")
 
-    # 2. CoinGecko API (Fallback 1)
+    # 2. Blockchain.info API (Fallback gratuito e sem rate limit)
     try:
-        url_coingecko = "https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=brl&include_24hr_change=true"
-        resp = requests.get(url_coingecko, headers=headers, timeout=4)
+        url = "https://blockchain.info/ticker"
+        resp = requests.get(url, headers=headers, timeout=5)
         if resp.status_code == 200:
-            data = resp.json().get("bitcoin", {})
-            val = float(data.get("brl", 0))
-            var = float(data.get("brl_24h_change", 0))
-            if val > 0:
-                return {"valor": val, "variacao": f"{var:.2f}"}
+            data = resp.json().get("BRL", {})
+            last_val = float(data.get("last", 0))
+            if last_val > 0:
+                return {"valor": last_val, "variacao": "0.00"}
     except Exception as e:
-        print(f"CoinGecko BTC error: {e}")
+        print(f"Blockchain.info BTC error: {e}")
+
+    return {"valor": 0, "variacao": "0.00"}
 
     # 3. AwesomeAPI (Fallback 2)
     try:
